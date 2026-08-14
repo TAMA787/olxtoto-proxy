@@ -1,145 +1,185 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>OLXTOTO — Loading Game</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            background: #0f0e17; color: #fffffe;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            min-height: 100vh; display: flex; align-items: center; justify-content: center;
-            padding: 20px;
-        }
-        .container { text-align: center; max-width: 400px; width: 100%; }
-        h2 { font-size: 1.3rem; margin-bottom: 12px; }
-        .status { color: #a7a9be; font-size: 0.95rem; margin-bottom: 24px; }
-
-        .loader {
-            width: 48px; height: 48px; margin: 0 auto 24px;
-            border: 4px solid rgba(255,255,255,0.1);
-            border-top-color: #ff8906; border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        .btn {
-            display: block; width: 100%; padding: 14px 20px; margin: 8px 0;
-            border: none; border-radius: 10px; font-size: 1rem; font-weight: 600;
-            text-decoration: none; text-align: center; cursor: pointer;
-            transition: transform 0.1s, opacity 0.2s;
-        }
-        .btn:active { transform: scale(0.97); }
-        .btn-primary { background: #ff8906; color: #0f0e17; }
-        .btn-secondary { background: #242629; color: #fffffe; border: 1px solid #333; }
-        .btn-lobby { background: #2cb67d; color: #0f0e17; }
-
-        .step-label {
-            display: inline-block; background: #ff8906; color: #0f0e17;
-            width: 24px; height: 24px; border-radius: 50%; line-height: 24px;
-            font-size: 0.75rem; font-weight: 700; margin-right: 6px;
-        }
-
-        .note { color: #a7a9be; font-size: 0.8rem; margin-top: 16px; line-height: 1.5; }
-        .hidden { display: none; }
-    </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Loading Game...</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0a0a;color:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh;min-height:100dvh;text-align:center;overflow-x:hidden}
+  .container{display:flex;flex-direction:column;align-items:center;gap:16px;padding:20px;max-width:360px;width:100%}
+  .spinner{width:48px;height:48px;border:4px solid rgba(255,255,255,0.1);border-top-color:#f59e0b;border-radius:50%;animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .game-name{font-size:20px;font-weight:700;color:#f59e0b}
+  .progress-wrap{width:100%;height:6px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden}
+  .progress-bar{height:100%;width:0%;background:linear-gradient(90deg,#f59e0b,#ef4444);border-radius:3px;transition:width .4s}
+  .status{font-size:14px;color:rgba(255,255,255,0.5)}
+  .steps{display:none;width:100%;text-align:left}
+  .steps.show{display:flex;flex-direction:column;gap:12px}
+  .step-card{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px}
+  .step-num{width:32px;height:32px;background:#f59e0b;color:#000;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0}
+  .step-num.done{background:#22c55e}
+  .step-info{flex:1}
+  .step-title{font-size:14px;font-weight:600;margin-bottom:2px}
+  .step-desc{font-size:12px;color:rgba(255,255,255,0.4)}
+  .btn{display:block;width:100%;padding:14px 20px;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;text-decoration:none;text-align:center;transition:transform .1s,opacity .2s}
+  .btn:active{transform:scale(0.97)}
+  .btn-lobby{background:#22c55e;color:#000}
+  .btn-game{background:#f59e0b;color:#000}
+  .btn-back{background:rgba(255,255,255,0.08);color:#fff;font-size:13px;padding:10px}
+  .note{font-size:12px;color:rgba(255,255,255,0.35);line-height:1.5;margin-top:4px}
+  .hidden{display:none!important}
+  .error-box{display:none;flex-direction:column;align-items:center;gap:16px}
+  .error-box.show{display:flex}
+  .error-msg{font-size:15px;color:rgba(255,255,255,0.7);line-height:1.5}
+</style>
 </head>
 <body>
-    <!-- STATE: Loading -->
-    <div class="container" id="loading">
-        <div class="loader"></div>
-        <h2>⏳ Menyiapkan Game...</h2>
-        <p class="status" id="loadStatus">Mengautentikasi sesi...</p>
+
+<!-- STATE: Loading -->
+<div class="container" id="loading">
+  <div class="spinner"></div>
+  <div class="game-name" id="gameName">Loading...</div>
+  <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
+  <div class="status" id="status">Menyiapkan game...</div>
+</div>
+
+<!-- STATE: 2-Step Manual -->
+<div class="container hidden" id="stepsView">
+  <div class="game-name" id="gameName2">Game</div>
+  <p class="status">Ikuti 2 langkah ini untuk bermain:</p>
+
+  <div class="steps show">
+    <div class="step-card">
+      <div class="step-num" id="stepNum1">1</div>
+      <div class="step-info">
+        <div class="step-title">Buka Lobby (Set Session)</div>
+        <div class="step-desc">Klik tombol di bawah, tunggu lobby terbuka</div>
+      </div>
     </div>
+    <a id="lobbyBtn" class="btn btn-lobby" href="#" target="_blank" rel="noopener">
+      🔗 Buka Lobby
+    </a>
 
-    <!-- STATE: Manual (fallback jika auto-redirect gagal) -->
-    <div class="container hidden" id="manual">
-        <h2 id="gameName">🎮 Game</h2>
-        <p class="status">Buka lobby dulu untuk autentikasi, lalu mainkan game:</p>
-
-        <a id="lobbyBtn" class="btn btn-lobby" href="#" target="_blank" rel="noopener">
-            <span class="step-label">1</span> Buka Lobby (Set Session)
-        </a>
-        <a id="gameBtn" class="btn btn-primary" href="#" target="_blank" rel="noopener">
-            <span class="step-label">2</span> Mainkan Game
-        </a>
-        <a class="btn btn-secondary" href="javascript:history.back()">
-            ← Kembali ke Bot
-        </a>
-
-        <p class="note">
-            💡 Klik tombol 1 dulu, tunggu lobby terbuka, lalu klik tombol 2.
-            <br>Jika masih "Session Empty", tutup game dan ulangi dari Step 1.
-        </p>
+    <div class="step-card">
+      <div class="step-num">2</div>
+      <div class="step-info">
+        <div class="step-title">Mainkan Game</div>
+        <div class="step-desc">Setelah lobby terbuka, klik tombol ini</div>
+      </div>
     </div>
+    <a id="gameBtn" class="btn btn-game" href="#" target="_blank" rel="noopener">
+      ▶️ Main Game
+    </a>
+  </div>
 
-    <script>
-    (function() {
-        // ── Parse URL params ──
-        const params = new URLSearchParams(window.location.search);
+  <button class="btn btn-back" onclick="history.back()">← Kembali ke Bot</button>
+  <p class="note">
+    💡 Jika masih "Session Empty": tutup semua tab game, ulangi dari Step 1.
+  </p>
+</div>
 
-        function b64decode(s) {
-            if (!s) return '';
-            try {
-                s = s.replace(/-/g, '+').replace(/_/g, '/');
-                while (s.length % 4) s += '=';
-                return decodeURIComponent(atob(s));
-            } catch(e) {
-                return '';
-            }
-        }
+<!-- STATE: Error -->
+<div class="container error-box" id="errorBox">
+  <div style="font-size:48px">⚠️</div>
+  <div class="error-msg" id="errorMsg">Link tidak valid.</div>
+  <button class="btn btn-back" onclick="history.back()">← Kembali ke Bot</button>
+</div>
 
-        const lobbyUrl = b64decode(params.get('lobby'));
-        const gameUrl  = b64decode(params.get('game'));
-        const gameName = b64decode(params.get('name')) || 'Game';
-        const mode     = params.get('mode') || 'proxy';
+<script>
+(function(){
+  var params = new URLSearchParams(window.location.search);
+  var lobbyUrl = params.get('lobby');
+  var gameUrl = params.get('game');
+  var gameName = params.get('name') || 'Game';
+  var mode = params.get('mode') || 'proxy';
 
-        // ── Mode: lobby → redirect langsung ke lobby ──
-        if (mode === 'lobby' || !gameUrl) {
-            if (lobbyUrl) {
-                window.location.replace(lobbyUrl);
-            }
-            return;
-        }
+  // Decode base64url
+  function b64(s) {
+    if (!s) return '';
+    try {
+      s = s.replace(/-/g,'+').replace(/_/g,'/');
+      while (s.length % 4) s += '=';
+      return decodeURIComponent(atob(s));
+    } catch(e) {
+      try { return decodeURIComponent(s); } catch(e2) { return s; }
+    }
+  }
 
-        // ── Mode: proxy → coba auto-auth, fallback ke manual ──
-        const statusEl = document.getElementById('loadStatus');
+  lobbyUrl = b64(lobbyUrl);
+  gameUrl = b64(gameUrl);
+  if (gameName !== 'Game') gameName = b64(gameName);
 
-        // Strategi: Redirect berantai via sessionStorage
-        // Visit 1: play.html → simpan gameUrl → redirect ke lobby (set cookies)
-        // Visit 2: setelah lobby, user kembali → buka game
-        const STORAGE_KEY = 'olx_pending_game';
+  var elLoading = document.getElementById('loading');
+  var elSteps = document.getElementById('stepsView');
+  var errorBox = document.getElementById('errorBox');
+  var elProgress = document.getElementById('progressBar');
+  var elStatus = document.getElementById('status');
+  var targetUrl = gameUrl || lobbyUrl;
 
-        // Cek apakah ini "kembali dari lobby"
-        const pendingGame = sessionStorage.getItem(STORAGE_KEY);
-        if (pendingGame) {
-            // User sudah visit lobby → sekarang buka game
-            sessionStorage.removeItem(STORAGE_KEY);
-            statusEl.textContent = 'Membuka game...';
-            setTimeout(function() {
-                window.location.replace(pendingGame);
-            }, 500);
-            return;
-        }
+  // Validasi
+  if (!lobbyUrl || !targetUrl) {
+    elLoading.classList.add('hidden');
+    document.getElementById('errorMsg').textContent =
+      'Link tidak valid. Kembali ke bot dan pilih game lagi.';
+    errorBox.classList.add('show');
+    return;
+  }
 
-        // Pertama kali → coba buka game langsung (mungkin sudah punya session)
-        // Tapi kita tidak bisa cek cross-origin cookies dari sini.
-        // Jadi langsung tampilkan opsi manual (paling reliable).
+  document.getElementById('gameName').textContent = gameName;
+  document.getElementById('gameName2').textContent = '🎮 ' + gameName;
 
-        statusEl.textContent = 'Menyiapkan...';
+  // ── Mode LOBBY: redirect langsung ke lobby ──
+  if (mode === 'lobby' || !gameUrl) {
+    elProgress.style.width = '100%';
+    elStatus.textContent = 'Membuka lobby...';
+    setTimeout(function() {
+      window.location.replace(lobbyUrl);
+    }, 500);
+    return;
+  }
 
-        setTimeout(function() {
-            // Tampilkan mode manual (2 tombol)
-            document.getElementById('loading').classList.add('hidden');
-            var manualEl = document.getElementById('manual');
-            manualEl.classList.remove('hidden');
-            document.getElementById('gameName').textContent = '🎮 ' + gameName;
-            document.getElementById('lobbyBtn').href = lobbyUrl;
-            document.getElementById('gameBtn').href = gameUrl;
-        }, 800);
+  // ── Mode PROXY: coba redirect langsung, fallback ke 2-step ──
+  elProgress.style.width = '30%';
+  elStatus.textContent = 'Mencoba membuka game...';
 
-    })();
-    </script>
+  // Coba redirect langsung ke game URL (yang sudah di-inject auth params oleh bot)
+  // Jika game URL sudah mengandung token auth, ini bisa langsung jalan
+  var hasAuthInUrl = (gameUrl.indexOf('token=') !== -1 ||
+                      gameUrl.indexOf('loginid=') !== -1 ||
+                      gameUrl.indexOf('operator=') !== -1);
+
+  if (hasAuthInUrl) {
+    // Game URL punya auth params → coba langsung
+    elProgress.style.width = '70%';
+    elStatus.textContent = 'Memuat game...';
+    setTimeout(function() {
+      elProgress.style.width = '100%';
+      elStatus.textContent = 'Membuka game...';
+      setTimeout(function() {
+        window.location.replace(gameUrl);
+      }, 300);
+    }, 800);
+    return;
+  }
+
+  // Game URL TIDAK punya auth → tampilkan 2-step manual
+  setTimeout(function() {
+    elLoading.classList.add('hidden');
+    elSteps.classList.remove('hidden');
+    document.getElementById('lobbyBtn').href = lobbyUrl;
+    document.getElementById('gameBtn').href = gameUrl;
+
+    // Track: jika user sudah klik lobby, tandai step 1 done
+    document.getElementById('lobbyBtn').addEventListener('click', function() {
+      setTimeout(function() {
+        document.getElementById('stepNum1').textContent = '✓';
+        document.getElementById('stepNum1').classList.add('done');
+      }, 1000);
+    });
+  }, 1000);
+
+})();
+</script>
 </body>
 </html>
