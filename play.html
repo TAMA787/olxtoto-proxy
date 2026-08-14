@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="robots" content="noindex, nofollow">
 <title>Loading Game...</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
@@ -14,147 +15,123 @@
   .progress-wrap{width:100%;height:6px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden}
   .progress-bar{height:100%;width:0%;background:linear-gradient(90deg,#f59e0b,#ef4444);border-radius:3px;transition:width .3s}
   .status{font-size:14px;color:rgba(255,255,255,0.5)}
-  .hint{font-size:13px;color:rgba(255,255,255,0.4);line-height:1.5}
-  .box{display:none;flex-direction:column;align-items:center;gap:16px}
-  .box.show{display:flex}
-  .msg{font-size:15px;color:rgba(255,255,255,0.75);line-height:1.5}
+  .error-box{display:none;flex-direction:column;align-items:center;gap:16px}
+  .error-box.show{display:flex}
+  .error-msg{font-size:15px;color:rgba(255,255,255,0.7);line-height:1.5}
   .btn{padding:12px 32px;background:#f59e0b;color:#000;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}
-  .btn.ghost{background:transparent;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.15);font-weight:500;padding:10px 24px;font-size:14px}
+  .btn:hover{background:#d97706}
   .hidden{display:none!important}
 </style>
 </head>
 <body>
-
 <div class="container" id="loading">
   <div class="spinner"></div>
   <div class="game-name" id="gameName">Loading...</div>
   <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
   <div class="status" id="status">Menyiapkan sesi game...</div>
 </div>
-
-<!-- Sesi belum aktif / sudah kedaluwarsa → harus lewat lobby dulu -->
-<div class="container box" id="authBox">
-  <div style="font-size:44px">🔐</div>
-  <div class="game-name" id="authGameName">Game</div>
-  <div class="msg">Sesi IDN belum aktif. Buka lobby dulu untuk mengaktifkan sesi, lalu kembali ke bot dan pilih game ini lagi.</div>
-  <a class="btn" id="authBtn" href="#">Aktifkan Sesi (Buka Lobby)</a>
-  <div class="hint">Setelah lobby terbuka, sesi aktif ±<span id="ttlMin">5</span> menit.</div>
-</div>
-
-<!-- Link rusak -->
-<div class="container box" id="errorBox">
+<div class="container error-box" id="errorBox">
   <div style="font-size:48px">⚠️</div>
-  <div class="msg" id="errorMsg">Link tidak valid.</div>
-  <button class="btn" onclick="window.close()">Tutup</button>
+  <div class="error-msg" id="errorMsg">Link tidak valid.</div>
+  <a class="btn" href="javascript:history.back()">Kembali</a>
 </div>
-
 <script>
 (function(){
-  // Sesi IDN dianggap masih hidup selama TTL_MS setelah lobby dibuka.
-  // Dibikin pendek — cookie sesi IDN umurnya memang sebentar, dan flag yang
-  // kepanjangan bikin play.html nembak game URL tanpa sesi → "Session Empty".
-  var TTL_MS = 5 * 60 * 1000;
-  var STORE_KEY = 'idn_auth_v2';   // key baru → flag permanen versi lama otomatis diabaikan
+  'use strict';
 
-  var params   = new URLSearchParams(window.location.search);
-  var lobbyUrl = params.get('lobby');
-  var gameUrl  = params.get('game');
-  var gameName = params.get('name') || 'Game';
-  var mode     = params.get('mode') || 'proxy';
-  var force    = params.get('force');   // force=lobby → paksa ulang lewat lobby
+  var params = new URLSearchParams(window.location.search);
+  var lobbyParam = params.get('lobby');
+  var gameParam  = params.get('game');
+  var nameParam  = params.get('name');
 
-  function b64urlDecode(v){
-    if(!v) return null;
-    try { return decodeURIComponent(atob(v.replace(/-/g,'+').replace(/_/g,'/'))); }
-    catch(e){ try { return decodeURIComponent(v); } catch(e2){ return v; } }
+  // ── Base64url decode helper ──
+  function b64urlDecode(str) {
+    if (!str) return null;
+    try {
+      // Restore standard base64: replace URL-safe chars, add padding
+      var b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4 !== 0) b64 += '=';
+      return decodeURIComponent(atob(b64));
+    } catch (e) {
+      // Fallback: try as plain URI-encoded string
+      try { return decodeURIComponent(str); } catch (e2) { return str; }
+    }
   }
 
-  lobbyUrl = b64urlDecode(lobbyUrl);
-  gameUrl  = b64urlDecode(gameUrl);
-  if(gameName !== 'Game') gameName = b64urlDecode(gameName) || 'Game';
+  var lobbyUrl = b64urlDecode(lobbyParam);
+  var gameUrl  = b64urlDecode(gameParam);
+  var gameName = nameParam ? b64urlDecode(nameParam) : 'Game';
 
-  var elName     = document.getElementById('gameName');
-  var elStatus   = document.getElementById('status');
-  var elProgress = document.getElementById('progressBar');
-  var elLoading  = document.getElementById('loading');
-  var authBox    = document.getElementById('authBox');
-  var errorBox   = document.getElementById('errorBox');
-  var elErrMsg   = document.getElementById('errorMsg');
+  // ── DOM refs ──
+  var elName    = document.getElementById('gameName');
+  var elStatus  = document.getElementById('status');
+  var elProgress= document.getElementById('progressBar');
+  var elLoading = document.getElementById('loading');
+  var errorBox  = document.getElementById('errorBox');
+  var elErrMsg  = document.getElementById('errorMsg');
 
-  function showError(msg){
+  // Target: prefer game URL, fallback to lobby
+  var targetUrl = gameUrl || lobbyUrl;
+
+  // ── Validate ──
+  if (!lobbyUrl || !targetUrl) {
     elLoading.classList.add('hidden');
-    elErrMsg.textContent = msg;
+    elErrMsg.textContent = 'Link tidak valid. Silakan kembali ke bot dan pilih game lagi.';
     errorBox.classList.add('show');
-  }
-
-  if(!lobbyUrl){
-    showError('Link tidak valid. Silakan kembali ke bot dan pilih game lagi.');
     return;
   }
 
-  elName.textContent = gameName;
-  document.getElementById('ttlMin').textContent = Math.round(TTL_MS / 60000);
+  elName.textContent = gameName || 'Game';
 
-  function setProgress(pct){ elProgress.style.width = pct + '%'; }
+  function setProgress(pct) { elProgress.style.width = pct + '%'; }
 
-  function readAuthTs(){
-    try {
-      var raw = localStorage.getItem(STORE_KEY);
-      if(!raw) return 0;
-      var data = JSON.parse(raw);
-      // Flag terikat ke host lobby — ganti situs/agen, sesi ikut dianggap baru.
-      if(data.host !== new URL(lobbyUrl).host) return 0;
-      return data.ts || 0;
-    } catch(e){ return 0; }
-  }
-
-  function markAuthed(){
-    try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({
-        host: new URL(lobbyUrl).host,
-        ts: Date.now()
-      }));
-    } catch(e){}
-  }
-
-  function goTo(url, label){
+  var redirected = false;
+  function doRedirect(url) {
+    if (redirected) return;
+    redirected = true;
     setProgress(100);
-    elStatus.textContent = label;
-    setTimeout(function(){ window.location.replace(url); }, 300);
+    elStatus.textContent = 'Membuka game...';
+    setTimeout(function() { window.location.replace(url); }, 300);
   }
 
-  // ── mode=lobby → memang cuma buka lobby, user pilih game di dalam ──
-  if(mode === 'lobby' || !gameUrl){
-    markAuthed();
-    setProgress(60);
-    goTo(lobbyUrl, 'Membuka lobby...');
-    return;
-  }
+  // ── Auth session tracking (per-domain) ──
+  var domain;
+  try { domain = new URL(lobbyUrl).hostname; } catch(e) { domain = 'default'; }
+  var storageKey = 'auth_' + domain;
+  var hasAuth = false;
+  try { hasAuth = sessionStorage.getItem(storageKey) === '1'; } catch(e) {}
 
-  // ── mode=proxy → butuh sesi IDN yang masih hidup ──
-  var age = Date.now() - readAuthTs();
-  var sessionFresh = readAuthTs() > 0 && age < TTL_MS;
-
-  if(sessionFresh && force !== 'lobby'){
+  if (hasAuth && gameUrl) {
+    // Already authenticated for this domain → go straight to game
     setProgress(50);
     elStatus.textContent = 'Memuat game...';
-    goTo(gameUrl, 'Membuka game...');
-    return;
+    doRedirect(gameUrl);
+  } else {
+    // First visit or no game URL → go through lobby to establish session
+    try { sessionStorage.setItem(storageKey, '1'); } catch(e) {}
+
+    setProgress(10);
+    elStatus.textContent = 'Menyiapkan sesi...';
+
+    setTimeout(function() {
+      setProgress(50);
+      elStatus.textContent = 'Menghubungkan ke server...';
+      setTimeout(function() {
+        // If we have a specific game URL but need auth first, go to lobby
+        // Next time user opens a game on this domain, they'll skip to game directly
+        doRedirect(lobbyUrl);
+      }, 600);
+    }, 400);
   }
 
-  // Sesi belum ada / sudah basi → JANGAN tembak game URL (pasti "Session Empty").
-  // Tampilkan tombol, biar user yang memicu navigasi ke lobby.
-  // Flag baru ditulis saat tombol diklik — bukan sebelum auth benar-benar jalan.
-  elLoading.classList.add('hidden');
-  document.getElementById('authGameName').textContent = gameName;
-  var authBtn = document.getElementById('authBtn');
-  authBtn.href = lobbyUrl;
-  authBtn.addEventListener('click', function(e){
-    e.preventDefault();
-    markAuthed();
-    window.location.replace(lobbyUrl);
-  });
-  authBox.classList.add('show');
+  // ── Safety timeout: if nothing happens in 15s, show error ──
+  setTimeout(function() {
+    if (!redirected) {
+      elLoading.classList.add('hidden');
+      elErrMsg.textContent = 'Koneksi timeout. Silakan coba lagi.';
+      errorBox.classList.add('show');
+    }
+  }, 15000);
 })();
 </script>
 </body>
