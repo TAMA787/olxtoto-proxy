@@ -3,7 +3,6 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<meta name="robots" content="noindex, nofollow">
 <title>Loading Game...</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
@@ -18,8 +17,7 @@
   .error-box{display:none;flex-direction:column;align-items:center;gap:16px}
   .error-box.show{display:flex}
   .error-msg{font-size:15px;color:rgba(255,255,255,0.7);line-height:1.5}
-  .btn{padding:12px 32px;background:#f59e0b;color:#000;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}
-  .btn:hover{background:#d97706}
+  .btn{padding:12px 32px;background:#f59e0b;color:#000;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;text-decoration:none}
   .hidden{display:none!important}
 </style>
 </head>
@@ -33,105 +31,84 @@
 <div class="container error-box" id="errorBox">
   <div style="font-size:48px">⚠️</div>
   <div class="error-msg" id="errorMsg">Link tidak valid.</div>
-  <a class="btn" href="javascript:history.back()">Kembali</a>
+  <button class="btn" onclick="window.close()">Tutup</button>
 </div>
+<iframe id="authFrame" class="hidden" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
 <script>
 (function(){
-  'use strict';
-
   var params = new URLSearchParams(window.location.search);
-  var lobbyParam = params.get('lobby');
-  var gameParam  = params.get('game');
-  var nameParam  = params.get('name');
+  var lobbyUrl = params.get('lobby');
+  var gameUrl = params.get('game');
+  var gameName = params.get('name') || 'Game';
 
-  // ── Base64url decode helper ──
-  function b64urlDecode(str) {
-    if (!str) return null;
+  try {
+    if(lobbyUrl) lobbyUrl = decodeURIComponent(atob(lobbyUrl.replace(/-/g,'+').replace(/_/g,'/')));
+    if(gameUrl) gameUrl = decodeURIComponent(atob(gameUrl.replace(/-/g,'+').replace(/_/g,'/')));
+    if(gameName!=='Game') gameName = decodeURIComponent(atob(gameName.replace(/-/g,'+').replace(/_/g,'/')));
+  } catch(e) {
     try {
-      // Restore standard base64: replace URL-safe chars, add padding
-      var b64 = str.replace(/-/g, '+').replace(/_/g, '/');
-      while (b64.length % 4 !== 0) b64 += '=';
-      return decodeURIComponent(atob(b64));
-    } catch (e) {
-      // Fallback: try as plain URI-encoded string
-      try { return decodeURIComponent(str); } catch (e2) { return str; }
-    }
+      lobbyUrl = lobbyUrl ? decodeURIComponent(lobbyUrl) : null;
+      gameUrl = gameUrl ? decodeURIComponent(gameUrl) : null;
+      gameName = gameName!=='Game' ? decodeURIComponent(gameName) : gameName;
+    } catch(e2){}
   }
 
-  var lobbyUrl = b64urlDecode(lobbyParam);
-  var gameUrl  = b64urlDecode(gameParam);
-  var gameName = nameParam ? b64urlDecode(nameParam) : 'Game';
-
-  // ── DOM refs ──
-  var elName    = document.getElementById('gameName');
-  var elStatus  = document.getElementById('status');
-  var elProgress= document.getElementById('progressBar');
+  var elName = document.getElementById('gameName');
+  var elStatus = document.getElementById('status');
+  var elProgress = document.getElementById('progressBar');
   var elLoading = document.getElementById('loading');
-  var errorBox  = document.getElementById('errorBox');
-  var elErrMsg  = document.getElementById('errorMsg');
-
-  // Target: prefer game URL, fallback to lobby
+  var errorBox = document.getElementById('errorBox');
+  var elErrMsg = document.getElementById('errorMsg');
+  var authFrame = document.getElementById('authFrame');
   var targetUrl = gameUrl || lobbyUrl;
 
-  // ── Validate ──
-  if (!lobbyUrl || !targetUrl) {
+  if(!lobbyUrl || !targetUrl){
     elLoading.classList.add('hidden');
     elErrMsg.textContent = 'Link tidak valid. Silakan kembali ke bot dan pilih game lagi.';
     errorBox.classList.add('show');
     return;
   }
 
-  elName.textContent = gameName || 'Game';
-
-  function setProgress(pct) { elProgress.style.width = pct + '%'; }
-
+  elName.textContent = gameName;
   var redirected = false;
-  function doRedirect(url) {
-    if (redirected) return;
+
+  function setProgress(pct){ elProgress.style.width = pct+'%'; }
+
+  function doRedirect(){
+    if(redirected) return;
     redirected = true;
     setProgress(100);
     elStatus.textContent = 'Membuka game...';
-    setTimeout(function() { window.location.replace(url); }, 300);
+    setTimeout(function(){ window.location.replace(targetUrl); }, 300);
   }
 
-  // ── Auth session tracking (per-domain) ──
-  var domain;
-  try { domain = new URL(lobbyUrl).hostname; } catch(e) { domain = 'default'; }
-  var storageKey = 'auth_' + domain;
+  // Cek apakah cookies sudah ada (pernah buka lobby sebelumnya)
+  var cookieKey = 'idn_auth_ok';
   var hasAuth = false;
-  try { hasAuth = sessionStorage.getItem(storageKey) === '1'; } catch(e) {}
+  try { hasAuth = localStorage.getItem(cookieKey) === '1'; } catch(e){}
 
-  if (hasAuth && gameUrl) {
-    // Already authenticated for this domain → go straight to game
+  if(hasAuth){
+    // SUDAH pernah auth → langsung redirect ke game
     setProgress(50);
     elStatus.textContent = 'Memuat game...';
-    doRedirect(gameUrl);
+    doRedirect();
   } else {
-    // First visit or no game URL → go through lobby to establish session
-    try { sessionStorage.setItem(storageKey, '1'); } catch(e) {}
+    // BELUM pernah auth → buka lobby dulu untuk set cookies
+    // Simpan flag bahwa sudah auth
+    try { localStorage.setItem(cookieKey, '1'); } catch(e){}
 
     setProgress(10);
-    elStatus.textContent = 'Menyiapkan sesi...';
+    elStatus.textContent = 'Menyiapkan sesi pertama kali...';
 
-    setTimeout(function() {
+    // Redirect ke lobby (top-level, bukan iframe) → set first-party cookies
+    setTimeout(function(){
       setProgress(50);
       elStatus.textContent = 'Menghubungkan ke server...';
-      setTimeout(function() {
-        // If we have a specific game URL but need auth first, go to lobby
-        // Next time user opens a game on this domain, they'll skip to game directly
-        doRedirect(lobbyUrl);
-      }, 600);
-    }, 400);
+      setTimeout(function(){
+        window.location.replace(lobbyUrl);
+      }, 800);
+    }, 500);
   }
-
-  // ── Safety timeout: if nothing happens in 15s, show error ──
-  setTimeout(function() {
-    if (!redirected) {
-      elLoading.classList.add('hidden');
-      elErrMsg.textContent = 'Koneksi timeout. Silakan coba lagi.';
-      errorBox.classList.add('show');
-    }
-  }, 15000);
 })();
 </script>
 </body>
