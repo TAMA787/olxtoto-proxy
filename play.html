@@ -6,105 +6,72 @@
 <title>Loading Game...</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  body {
+  html, body { width:100%; height:100%; overflow:hidden; background:#0a0a0a; }
+
+  /* Loading screen */
+  .loader {
+    position: fixed; inset: 0; z-index: 999;
+    display: flex; align-items: center; justify-content: center;
+    background: #0a0a0a; color: #fff;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: #0a0a0a;
-    color: #fff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    height: 100dvh;
     text-align: center;
-    overflow: hidden;
+    transition: opacity 0.4s ease;
   }
-  .container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 24px;
-    padding: 20px;
-    max-width: 340px;
-  }
+  .loader.hide { opacity: 0; pointer-events: none; }
+  .loader-inner { display: flex; flex-direction: column; align-items: center; gap: 20px; padding: 20px; }
   .spinner {
-    width: 52px; height: 52px;
+    width: 48px; height: 48px;
     border: 4px solid rgba(255,255,255,0.1);
     border-top-color: #f59e0b;
     border-radius: 50%;
     animation: spin 0.7s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .game-name {
-    font-size: 20px;
-    font-weight: 700;
-    color: #f59e0b;
-    line-height: 1.3;
+  .game-name { font-size: 20px; font-weight: 700; color: #f59e0b; }
+  .progress-wrap { width: 240px; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; }
+  .progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, #f59e0b, #ef4444); border-radius: 3px; transition: width 0.3s; }
+  .status { font-size: 13px; color: rgba(255,255,255,0.45); }
+
+  /* Error */
+  .error-box { display:none; flex-direction:column; align-items:center; gap:16px; }
+  .error-box.show { display:flex; }
+  .error-icon { font-size:48px; }
+  .error-msg { font-size:15px; color:rgba(255,255,255,0.7); line-height:1.5; }
+  .btn-close { padding:12px 32px; background:#f59e0b; color:#000; border:none; border-radius:8px; font-size:15px; font-weight:600; cursor:pointer; }
+
+  /* Game iframe — full screen */
+  #gameFrame {
+    position: fixed; inset: 0; z-index: 1;
+    width: 100%; height: 100%;
+    border: none; background: #000;
   }
-  .progress-wrap {
-    width: 100%;
-    height: 6px;
-    background: rgba(255,255,255,0.08);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-  .progress-bar {
-    height: 100%;
-    width: 0%;
-    background: linear-gradient(90deg, #f59e0b, #ef4444);
-    border-radius: 3px;
-    transition: width 0.3s ease;
-  }
-  .status {
-    font-size: 14px;
-    color: rgba(255,255,255,0.5);
-    line-height: 1.5;
-  }
-  .error-box {
-    display: none;
-    flex-direction: column;
-    align-items: center;
-    gap: 16px;
-  }
-  .error-box.show { display: flex; }
-  .error-icon { font-size: 48px; }
-  .error-msg {
-    font-size: 15px;
-    color: rgba(255,255,255,0.7);
-    line-height: 1.5;
-  }
-  .btn-retry {
-    padding: 12px 32px;
-    background: #f59e0b;
-    color: #000;
-    border: none;
-    border-radius: 8px;
-    font-size: 15px;
-    font-weight: 600;
-    cursor: pointer;
-    text-decoration: none;
-  }
-  .btn-retry:active { opacity: 0.8; }
   .hidden { display: none !important; }
 </style>
 </head>
 <body>
 
-<div class="container" id="loading">
-  <div class="spinner"></div>
-  <div class="game-name" id="gameName">Loading...</div>
-  <div class="progress-wrap">
-    <div class="progress-bar" id="progressBar"></div>
+<!-- Loading overlay -->
+<div class="loader" id="loader">
+  <div class="loader-inner" id="loadingContent">
+    <div class="spinner"></div>
+    <div class="game-name" id="gameName">Loading...</div>
+    <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
+    <div class="status" id="status">Menyiapkan sesi game...</div>
   </div>
-  <div class="status" id="status">Menyiapkan sesi game...</div>
+  <div class="loader-inner error-box" id="errorBox">
+    <div class="error-icon">⚠️</div>
+    <div class="error-msg" id="errorMsg">Link tidak valid.</div>
+    <button class="btn-close" onclick="window.close()">Tutup</button>
+  </div>
 </div>
 
-<div class="container error-box" id="errorBox">
-  <div class="error-icon">⚠️</div>
-  <div class="error-msg" id="errorMsg">Link tidak valid atau sudah kedaluwarsa.</div>
-  <a class="btn-retry" href="javascript:void(0)" onclick="window.close()">Tutup</a>
-</div>
-
+<!-- Auth iframe (hidden, for cookie injection) -->
 <iframe id="authFrame" class="hidden" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+
+<!-- Game iframe (full screen) -->
+<iframe id="gameFrame" class="hidden" allow="autoplay; fullscreen; camera; microphone"
+  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-presentation"
+  allowfullscreen></iframe>
 
 <script>
 (function() {
@@ -112,7 +79,7 @@
   var lobbyUrl = params.get('lobby');
   var gameUrl  = params.get('game');
   var gameName = params.get('name') || 'Game';
-  var mode     = params.get('mode') || 'proxy';  // 'proxy' atau 'lobby'
+  var mode     = params.get('mode') || 'proxy';
 
   // Decode base64url
   try {
@@ -127,56 +94,62 @@
     } catch(e2) {}
   }
 
-  var elName     = document.getElementById('gameName');
-  var elStatus   = document.getElementById('status');
-  var elProgress = document.getElementById('progressBar');
-  var elLoading  = document.getElementById('loading');
-  var elError    = document.getElementById('errorBox');
-  var elErrMsg   = document.getElementById('errorMsg');
-  var authFrame  = document.getElementById('authFrame');
+  var loader      = document.getElementById('loader');
+  var loadingContent = document.getElementById('loadingContent');
+  var elName      = document.getElementById('gameName');
+  var elStatus    = document.getElementById('status');
+  var elProgress  = document.getElementById('progressBar');
+  var errorBox    = document.getElementById('errorBox');
+  var elErrMsg    = document.getElementById('errorMsg');
+  var authFrame   = document.getElementById('authFrame');
+  var gameFrame   = document.getElementById('gameFrame');
 
-  // Validate
-  if (!lobbyUrl) {
-    elLoading.classList.add('hidden');
+  var targetUrl = (mode === 'lobby' || !gameUrl) ? lobbyUrl : gameUrl;
+
+  if (!lobbyUrl || !targetUrl) {
+    loadingContent.classList.add('hidden');
     elErrMsg.textContent = 'Link tidak valid. Silakan kembali ke bot dan pilih game lagi.';
-    elError.classList.add('show');
+    errorBox.classList.add('show');
     return;
   }
 
-  // Tentukan target URL berdasarkan mode
-  var targetUrl = gameUrl || lobbyUrl;
-
   elName.textContent = gameName;
-  var redirected = false;
+  var loaded = false;
 
-  function setProgress(pct) {
-    elProgress.style.width = pct + '%';
-  }
+  function setProgress(pct) { elProgress.style.width = pct + '%'; }
 
-  function doRedirect() {
-    if (redirected) return;
-    redirected = true;
+  function showGame() {
+    if (loaded) return;
+    loaded = true;
     setProgress(100);
     elStatus.textContent = 'Membuka game...';
-    setTimeout(function() {
-      window.location.replace(targetUrl);
-    }, 300);
+
+    // Load game di iframe full screen
+    gameFrame.classList.remove('hidden');
+    gameFrame.src = targetUrl;
+
+    // Tunggu game frame load, lalu sembunyikan loader
+    gameFrame.onload = function() {
+      setTimeout(function() { loader.classList.add('hide'); }, 500);
+    };
+    // Fallback: sembunyikan loader setelah 3 detik
+    setTimeout(function() { loader.classList.add('hide'); }, 3000);
   }
 
-  // Step 1: Load lobby di iframe (set cookies)
+  // Step 1: Set cookies via auth iframe
   setProgress(10);
   elStatus.textContent = 'Menghubungkan ke server...';
 
   authFrame.onload = function() {
     setProgress(70);
     elStatus.textContent = 'Sesi siap, memuat game...';
-    setTimeout(doRedirect, 1500);
+    setTimeout(showGame, 1200);
   };
 
   authFrame.onerror = function() {
     setProgress(50);
     elStatus.textContent = 'Memuat game...';
-    setTimeout(doRedirect, 800);
+    setTimeout(showGame, 600);
   };
 
   setTimeout(function() {
@@ -185,19 +158,11 @@
     authFrame.src = lobbyUrl;
   }, 200);
 
-  // Progress animation
   setTimeout(function() { setProgress(40); }, 1500);
   setTimeout(function() { setProgress(55); }, 3000);
 
   // Fallback timeout
-  setTimeout(function() {
-    if (!redirected) {
-      setProgress(85);
-      elStatus.textContent = 'Memuat game...';
-      doRedirect();
-    }
-  }, 6000);
-
+  setTimeout(function() { if (!loaded) showGame(); }, 6000);
 })();
 </script>
 </body>
