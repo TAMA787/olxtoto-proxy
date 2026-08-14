@@ -26,8 +26,6 @@
     padding: 20px;
     max-width: 340px;
   }
-
-  /* Spinner */
   .spinner {
     width: 52px; height: 52px;
     border: 4px solid rgba(255,255,255,0.1);
@@ -36,16 +34,12 @@
     animation: spin 0.7s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-
-  /* Game name */
   .game-name {
     font-size: 20px;
     font-weight: 700;
     color: #f59e0b;
     line-height: 1.3;
   }
-
-  /* Progress bar */
   .progress-wrap {
     width: 100%;
     height: 6px;
@@ -60,15 +54,11 @@
     border-radius: 3px;
     transition: width 0.3s ease;
   }
-
-  /* Status text */
   .status {
     font-size: 14px;
     color: rgba(255,255,255,0.5);
     line-height: 1.5;
   }
-
-  /* Error state */
   .error-box {
     display: none;
     flex-direction: column;
@@ -94,13 +84,11 @@
     text-decoration: none;
   }
   .btn-retry:active { opacity: 0.8; }
-
   .hidden { display: none !important; }
 </style>
 </head>
 <body>
 
-<!-- Loading State -->
 <div class="container" id="loading">
   <div class="spinner"></div>
   <div class="game-name" id="gameName">Loading...</div>
@@ -110,31 +98,28 @@
   <div class="status" id="status">Menyiapkan sesi game...</div>
 </div>
 
-<!-- Error State -->
 <div class="container error-box" id="errorBox">
   <div class="error-icon">⚠️</div>
   <div class="error-msg" id="errorMsg">Link tidak valid atau sudah kedaluwarsa.</div>
   <a class="btn-retry" href="javascript:void(0)" onclick="window.close()">Tutup</a>
 </div>
 
-<!-- Auth iframe (hidden) -->
 <iframe id="authFrame" class="hidden" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
 
 <script>
 (function() {
-  // ── Parse URL parameters ──
   var params = new URLSearchParams(window.location.search);
   var lobbyUrl = params.get('lobby');
   var gameUrl  = params.get('game');
   var gameName = params.get('name') || 'Game';
+  var mode     = params.get('mode') || 'proxy';  // 'proxy' atau 'lobby'
 
-  // Decode (bot mengirim base64url-encoded)
+  // Decode base64url
   try {
     if (lobbyUrl) lobbyUrl = decodeURIComponent(atob(lobbyUrl.replace(/-/g,'+').replace(/_/g,'/')));
     if (gameUrl)  gameUrl  = decodeURIComponent(atob(gameUrl.replace(/-/g,'+').replace(/_/g,'/')));
     if (gameName !== 'Game') gameName = decodeURIComponent(atob(gameName.replace(/-/g,'+').replace(/_/g,'/')));
   } catch(e) {
-    // Fallback: mungkin plain URL-encoded
     try {
       lobbyUrl = lobbyUrl ? decodeURIComponent(lobbyUrl) : null;
       gameUrl  = gameUrl  ? decodeURIComponent(gameUrl)  : null;
@@ -150,15 +135,17 @@
   var elErrMsg   = document.getElementById('errorMsg');
   var authFrame  = document.getElementById('authFrame');
 
-  // ── Validate ──
-  if (!lobbyUrl || !gameUrl) {
+  // Validate
+  if (!lobbyUrl) {
     elLoading.classList.add('hidden');
     elErrMsg.textContent = 'Link tidak valid. Silakan kembali ke bot dan pilih game lagi.';
     elError.classList.add('show');
     return;
   }
 
-  // ── Show game name ──
+  // Tentukan target URL berdasarkan mode
+  var targetUrl = gameUrl || lobbyUrl;
+
   elName.textContent = gameName;
   var redirected = false;
 
@@ -171,44 +158,38 @@
     redirected = true;
     setProgress(100);
     elStatus.textContent = 'Membuka game...';
-    // Pakai replace agar tombol back tidak kembali ke halaman proxy
     setTimeout(function() {
-      window.location.replace(gameUrl);
+      window.location.replace(targetUrl);
     }, 300);
   }
 
-  // ── Step 1: Load lobby di iframe (set cookies) ──
+  // Step 1: Load lobby di iframe (set cookies)
   setProgress(10);
   elStatus.textContent = 'Menghubungkan ke server...';
 
   authFrame.onload = function() {
-    // Iframe loaded = cookies sudah di-set di domain game
     setProgress(70);
     elStatus.textContent = 'Sesi siap, memuat game...';
-    // Tunggu sebentar agar cookies benar-benar tersimpan
     setTimeout(doRedirect, 1500);
   };
 
   authFrame.onerror = function() {
-    // Iframe error (CORS/blocked) — tetap coba redirect
     setProgress(50);
     elStatus.textContent = 'Memuat game...';
     setTimeout(doRedirect, 800);
   };
 
-  // Set iframe src untuk mulai loading
   setTimeout(function() {
     setProgress(25);
     elStatus.textContent = 'Menyiapkan sesi...';
     authFrame.src = lobbyUrl;
   }, 200);
 
-  // ── Step 2: Progress animation ──
+  // Progress animation
   setTimeout(function() { setProgress(40); }, 1500);
   setTimeout(function() { setProgress(55); }, 3000);
 
-  // ── Step 3: Fallback timeout ──
-  // Jika iframe tidak load dalam 6 detik, redirect anyway
+  // Fallback timeout
   setTimeout(function() {
     if (!redirected) {
       setProgress(85);
