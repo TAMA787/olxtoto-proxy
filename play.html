@@ -1,115 +1,145 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Loading Game...</title>
-<style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0a0a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;height:100dvh;text-align:center;overflow:hidden}
-  .container{display:flex;flex-direction:column;align-items:center;gap:20px;padding:20px;max-width:340px}
-  .spinner{width:48px;height:48px;border:4px solid rgba(255,255,255,0.1);border-top-color:#f59e0b;border-radius:50%;animation:spin .7s linear infinite}
-  @keyframes spin{to{transform:rotate(360deg)}}
-  .game-name{font-size:20px;font-weight:700;color:#f59e0b}
-  .progress-wrap{width:100%;height:6px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden}
-  .progress-bar{height:100%;width:0%;background:linear-gradient(90deg,#f59e0b,#ef4444);border-radius:3px;transition:width .3s}
-  .status{font-size:14px;color:rgba(255,255,255,0.5)}
-  .error-box{display:none;flex-direction:column;align-items:center;gap:16px}
-  .error-box.show{display:flex}
-  .error-msg{font-size:15px;color:rgba(255,255,255,0.7);line-height:1.5}
-  .btn{padding:12px 32px;background:#f59e0b;color:#000;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;text-decoration:none}
-  .hidden{display:none!important}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>OLXTOTO — Loading Game</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: #0f0e17; color: #fffffe;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            min-height: 100vh; display: flex; align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        .container { text-align: center; max-width: 400px; width: 100%; }
+        h2 { font-size: 1.3rem; margin-bottom: 12px; }
+        .status { color: #a7a9be; font-size: 0.95rem; margin-bottom: 24px; }
+
+        .loader {
+            width: 48px; height: 48px; margin: 0 auto 24px;
+            border: 4px solid rgba(255,255,255,0.1);
+            border-top-color: #ff8906; border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .btn {
+            display: block; width: 100%; padding: 14px 20px; margin: 8px 0;
+            border: none; border-radius: 10px; font-size: 1rem; font-weight: 600;
+            text-decoration: none; text-align: center; cursor: pointer;
+            transition: transform 0.1s, opacity 0.2s;
+        }
+        .btn:active { transform: scale(0.97); }
+        .btn-primary { background: #ff8906; color: #0f0e17; }
+        .btn-secondary { background: #242629; color: #fffffe; border: 1px solid #333; }
+        .btn-lobby { background: #2cb67d; color: #0f0e17; }
+
+        .step-label {
+            display: inline-block; background: #ff8906; color: #0f0e17;
+            width: 24px; height: 24px; border-radius: 50%; line-height: 24px;
+            font-size: 0.75rem; font-weight: 700; margin-right: 6px;
+        }
+
+        .note { color: #a7a9be; font-size: 0.8rem; margin-top: 16px; line-height: 1.5; }
+        .hidden { display: none; }
+    </style>
 </head>
 <body>
-<div class="container" id="loading">
-  <div class="spinner"></div>
-  <div class="game-name" id="gameName">Loading...</div>
-  <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
-  <div class="status" id="status">Menyiapkan sesi game...</div>
-</div>
-<div class="container error-box" id="errorBox">
-  <div style="font-size:48px">⚠️</div>
-  <div class="error-msg" id="errorMsg">Link tidak valid.</div>
-  <button class="btn" onclick="window.close()">Tutup</button>
-</div>
-<iframe id="authFrame" class="hidden" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
-<script>
-(function(){
-  var params = new URLSearchParams(window.location.search);
-  var lobbyUrl = params.get('lobby');
-  var gameUrl = params.get('game');
-  var gameName = params.get('name') || 'Game';
+    <!-- STATE: Loading -->
+    <div class="container" id="loading">
+        <div class="loader"></div>
+        <h2>⏳ Menyiapkan Game...</h2>
+        <p class="status" id="loadStatus">Mengautentikasi sesi...</p>
+    </div>
 
-  try {
-    if(lobbyUrl) lobbyUrl = decodeURIComponent(atob(lobbyUrl.replace(/-/g,'+').replace(/_/g,'/')));
-    if(gameUrl) gameUrl = decodeURIComponent(atob(gameUrl.replace(/-/g,'+').replace(/_/g,'/')));
-    if(gameName!=='Game') gameName = decodeURIComponent(atob(gameName.replace(/-/g,'+').replace(/_/g,'/')));
-  } catch(e) {
-    try {
-      lobbyUrl = lobbyUrl ? decodeURIComponent(lobbyUrl) : null;
-      gameUrl = gameUrl ? decodeURIComponent(gameUrl) : null;
-      gameName = gameName!=='Game' ? decodeURIComponent(gameName) : gameName;
-    } catch(e2){}
-  }
+    <!-- STATE: Manual (fallback jika auto-redirect gagal) -->
+    <div class="container hidden" id="manual">
+        <h2 id="gameName">🎮 Game</h2>
+        <p class="status">Buka lobby dulu untuk autentikasi, lalu mainkan game:</p>
 
-  var elName = document.getElementById('gameName');
-  var elStatus = document.getElementById('status');
-  var elProgress = document.getElementById('progressBar');
-  var elLoading = document.getElementById('loading');
-  var errorBox = document.getElementById('errorBox');
-  var elErrMsg = document.getElementById('errorMsg');
-  var authFrame = document.getElementById('authFrame');
-  var targetUrl = gameUrl || lobbyUrl;
+        <a id="lobbyBtn" class="btn btn-lobby" href="#" target="_blank" rel="noopener">
+            <span class="step-label">1</span> Buka Lobby (Set Session)
+        </a>
+        <a id="gameBtn" class="btn btn-primary" href="#" target="_blank" rel="noopener">
+            <span class="step-label">2</span> Mainkan Game
+        </a>
+        <a class="btn btn-secondary" href="javascript:history.back()">
+            ← Kembali ke Bot
+        </a>
 
-  if(!lobbyUrl || !targetUrl){
-    elLoading.classList.add('hidden');
-    elErrMsg.textContent = 'Link tidak valid. Silakan kembali ke bot dan pilih game lagi.';
-    errorBox.classList.add('show');
-    return;
-  }
+        <p class="note">
+            💡 Klik tombol 1 dulu, tunggu lobby terbuka, lalu klik tombol 2.
+            <br>Jika masih "Session Empty", tutup game dan ulangi dari Step 1.
+        </p>
+    </div>
 
-  elName.textContent = gameName;
-  var redirected = false;
+    <script>
+    (function() {
+        // ── Parse URL params ──
+        const params = new URLSearchParams(window.location.search);
 
-  function setProgress(pct){ elProgress.style.width = pct+'%'; }
+        function b64decode(s) {
+            if (!s) return '';
+            try {
+                s = s.replace(/-/g, '+').replace(/_/g, '/');
+                while (s.length % 4) s += '=';
+                return decodeURIComponent(atob(s));
+            } catch(e) {
+                return '';
+            }
+        }
 
-  function doRedirect(){
-    if(redirected) return;
-    redirected = true;
-    setProgress(100);
-    elStatus.textContent = 'Membuka game...';
-    setTimeout(function(){ window.location.replace(targetUrl); }, 300);
-  }
+        const lobbyUrl = b64decode(params.get('lobby'));
+        const gameUrl  = b64decode(params.get('game'));
+        const gameName = b64decode(params.get('name')) || 'Game';
+        const mode     = params.get('mode') || 'proxy';
 
-  // Cek apakah cookies sudah ada (pernah buka lobby sebelumnya)
-  var cookieKey = 'idn_auth_ok';
-  var hasAuth = false;
-  try { hasAuth = localStorage.getItem(cookieKey) === '1'; } catch(e){}
+        // ── Mode: lobby → redirect langsung ke lobby ──
+        if (mode === 'lobby' || !gameUrl) {
+            if (lobbyUrl) {
+                window.location.replace(lobbyUrl);
+            }
+            return;
+        }
 
-  if(hasAuth){
-    // SUDAH pernah auth → langsung redirect ke game
-    setProgress(50);
-    elStatus.textContent = 'Memuat game...';
-    doRedirect();
-  } else {
-    // BELUM pernah auth → buka lobby dulu untuk set cookies
-    // Simpan flag bahwa sudah auth
-    try { localStorage.setItem(cookieKey, '1'); } catch(e){}
+        // ── Mode: proxy → coba auto-auth, fallback ke manual ──
+        const statusEl = document.getElementById('loadStatus');
 
-    setProgress(10);
-    elStatus.textContent = 'Menyiapkan sesi pertama kali...';
+        // Strategi: Redirect berantai via sessionStorage
+        // Visit 1: play.html → simpan gameUrl → redirect ke lobby (set cookies)
+        // Visit 2: setelah lobby, user kembali → buka game
+        const STORAGE_KEY = 'olx_pending_game';
 
-    // Redirect ke lobby (top-level, bukan iframe) → set first-party cookies
-    setTimeout(function(){
-      setProgress(50);
-      elStatus.textContent = 'Menghubungkan ke server...';
-      setTimeout(function(){
-        window.location.replace(lobbyUrl);
-      }, 800);
-    }, 500);
-  }
-})();
-</script>
+        // Cek apakah ini "kembali dari lobby"
+        const pendingGame = sessionStorage.getItem(STORAGE_KEY);
+        if (pendingGame) {
+            // User sudah visit lobby → sekarang buka game
+            sessionStorage.removeItem(STORAGE_KEY);
+            statusEl.textContent = 'Membuka game...';
+            setTimeout(function() {
+                window.location.replace(pendingGame);
+            }, 500);
+            return;
+        }
+
+        // Pertama kali → coba buka game langsung (mungkin sudah punya session)
+        // Tapi kita tidak bisa cek cross-origin cookies dari sini.
+        // Jadi langsung tampilkan opsi manual (paling reliable).
+
+        statusEl.textContent = 'Menyiapkan...';
+
+        setTimeout(function() {
+            // Tampilkan mode manual (2 tombol)
+            document.getElementById('loading').classList.add('hidden');
+            var manualEl = document.getElementById('manual');
+            manualEl.classList.remove('hidden');
+            document.getElementById('gameName').textContent = '🎮 ' + gameName;
+            document.getElementById('lobbyBtn').href = lobbyUrl;
+            document.getElementById('gameBtn').href = gameUrl;
+        }, 800);
+
+    })();
+    </script>
 </body>
 </html>
