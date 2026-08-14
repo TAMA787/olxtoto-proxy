@@ -6,179 +6,109 @@
 <title>Loading Game...</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0a0a;color:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh;min-height:100dvh;text-align:center;overflow-x:hidden}
-  .container{display:flex;flex-direction:column;align-items:center;gap:16px;padding:20px;max-width:360px;width:100%}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0a0a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;height:100dvh;text-align:center;overflow:hidden}
+  .container{display:flex;flex-direction:column;align-items:center;gap:20px;padding:20px;max-width:340px}
   .spinner{width:48px;height:48px;border:4px solid rgba(255,255,255,0.1);border-top-color:#f59e0b;border-radius:50%;animation:spin .7s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
   .game-name{font-size:20px;font-weight:700;color:#f59e0b}
   .progress-wrap{width:100%;height:6px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden}
-  .progress-bar{height:100%;width:0%;background:linear-gradient(90deg,#f59e0b,#ef4444);border-radius:3px;transition:width .4s}
+  .progress-bar{height:100%;width:0%;background:linear-gradient(90deg,#f59e0b,#ef4444);border-radius:3px;transition:width .3s}
   .status{font-size:14px;color:rgba(255,255,255,0.5)}
-  .steps{display:none;width:100%;text-align:left}
-  .steps.show{display:flex;flex-direction:column;gap:12px}
-  .step-card{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px}
-  .step-num{width:32px;height:32px;background:#f59e0b;color:#000;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0}
-  .step-num.done{background:#22c55e}
-  .step-info{flex:1}
-  .step-title{font-size:14px;font-weight:600;margin-bottom:2px}
-  .step-desc{font-size:12px;color:rgba(255,255,255,0.4)}
-  .btn{display:block;width:100%;padding:14px 20px;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;text-decoration:none;text-align:center;transition:transform .1s,opacity .2s}
-  .btn:active{transform:scale(0.97)}
-  .btn-lobby{background:#22c55e;color:#000}
-  .btn-game{background:#f59e0b;color:#000}
-  .btn-back{background:rgba(255,255,255,0.08);color:#fff;font-size:13px;padding:10px}
-  .note{font-size:12px;color:rgba(255,255,255,0.35);line-height:1.5;margin-top:4px}
-  .hidden{display:none!important}
   .error-box{display:none;flex-direction:column;align-items:center;gap:16px}
   .error-box.show{display:flex}
   .error-msg{font-size:15px;color:rgba(255,255,255,0.7);line-height:1.5}
+  .btn{padding:12px 32px;background:#f59e0b;color:#000;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;text-decoration:none}
+  .hidden{display:none!important}
 </style>
 </head>
 <body>
-
-<!-- STATE: Loading -->
 <div class="container" id="loading">
   <div class="spinner"></div>
   <div class="game-name" id="gameName">Loading...</div>
   <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
-  <div class="status" id="status">Menyiapkan game...</div>
+  <div class="status" id="status">Menyiapkan sesi game...</div>
 </div>
-
-<!-- STATE: 2-Step Manual -->
-<div class="container hidden" id="stepsView">
-  <div class="game-name" id="gameName2">Game</div>
-  <p class="status">Ikuti 2 langkah ini untuk bermain:</p>
-
-  <div class="steps show">
-    <div class="step-card">
-      <div class="step-num" id="stepNum1">1</div>
-      <div class="step-info">
-        <div class="step-title">Buka Lobby (Set Session)</div>
-        <div class="step-desc">Klik tombol di bawah, tunggu lobby terbuka</div>
-      </div>
-    </div>
-    <a id="lobbyBtn" class="btn btn-lobby" href="#" target="_blank" rel="noopener">
-      🔗 Buka Lobby
-    </a>
-
-    <div class="step-card">
-      <div class="step-num">2</div>
-      <div class="step-info">
-        <div class="step-title">Mainkan Game</div>
-        <div class="step-desc">Setelah lobby terbuka, klik tombol ini</div>
-      </div>
-    </div>
-    <a id="gameBtn" class="btn btn-game" href="#" target="_blank" rel="noopener">
-      ▶️ Main Game
-    </a>
-  </div>
-
-  <button class="btn btn-back" onclick="history.back()">← Kembali ke Bot</button>
-  <p class="note">
-    💡 Jika masih "Session Empty": tutup semua tab game, ulangi dari Step 1.
-  </p>
-</div>
-
-<!-- STATE: Error -->
 <div class="container error-box" id="errorBox">
   <div style="font-size:48px">⚠️</div>
   <div class="error-msg" id="errorMsg">Link tidak valid.</div>
-  <button class="btn btn-back" onclick="history.back()">← Kembali ke Bot</button>
+  <button class="btn" onclick="window.close()">Tutup</button>
 </div>
-
+<iframe id="authFrame" class="hidden" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
 <script>
 (function(){
   var params = new URLSearchParams(window.location.search);
   var lobbyUrl = params.get('lobby');
   var gameUrl = params.get('game');
   var gameName = params.get('name') || 'Game';
-  var mode = params.get('mode') || 'proxy';
 
-  // Decode base64url
-  function b64(s) {
-    if (!s) return '';
+  try {
+    if(lobbyUrl) lobbyUrl = decodeURIComponent(atob(lobbyUrl.replace(/-/g,'+').replace(/_/g,'/')));
+    if(gameUrl) gameUrl = decodeURIComponent(atob(gameUrl.replace(/-/g,'+').replace(/_/g,'/')));
+    if(gameName!=='Game') gameName = decodeURIComponent(atob(gameName.replace(/-/g,'+').replace(/_/g,'/')));
+  } catch(e) {
     try {
-      s = s.replace(/-/g,'+').replace(/_/g,'/');
-      while (s.length % 4) s += '=';
-      return decodeURIComponent(atob(s));
-    } catch(e) {
-      try { return decodeURIComponent(s); } catch(e2) { return s; }
-    }
+      lobbyUrl = lobbyUrl ? decodeURIComponent(lobbyUrl) : null;
+      gameUrl = gameUrl ? decodeURIComponent(gameUrl) : null;
+      gameName = gameName!=='Game' ? decodeURIComponent(gameName) : gameName;
+    } catch(e2){}
   }
 
-  lobbyUrl = b64(lobbyUrl);
-  gameUrl = b64(gameUrl);
-  if (gameName !== 'Game') gameName = b64(gameName);
-
-  var elLoading = document.getElementById('loading');
-  var elSteps = document.getElementById('stepsView');
-  var errorBox = document.getElementById('errorBox');
-  var elProgress = document.getElementById('progressBar');
+  var elName = document.getElementById('gameName');
   var elStatus = document.getElementById('status');
+  var elProgress = document.getElementById('progressBar');
+  var elLoading = document.getElementById('loading');
+  var errorBox = document.getElementById('errorBox');
+  var elErrMsg = document.getElementById('errorMsg');
+  var authFrame = document.getElementById('authFrame');
   var targetUrl = gameUrl || lobbyUrl;
 
-  // Validasi
-  if (!lobbyUrl || !targetUrl) {
+  if(!lobbyUrl || !targetUrl){
     elLoading.classList.add('hidden');
-    document.getElementById('errorMsg').textContent =
-      'Link tidak valid. Kembali ke bot dan pilih game lagi.';
+    elErrMsg.textContent = 'Link tidak valid. Silakan kembali ke bot dan pilih game lagi.';
     errorBox.classList.add('show');
     return;
   }
 
-  document.getElementById('gameName').textContent = gameName;
-  document.getElementById('gameName2').textContent = '🎮 ' + gameName;
+  elName.textContent = gameName;
+  var redirected = false;
 
-  // ── Mode LOBBY: redirect langsung ke lobby ──
-  if (mode === 'lobby' || !gameUrl) {
-    elProgress.style.width = '100%';
-    elStatus.textContent = 'Membuka lobby...';
-    setTimeout(function() {
-      window.location.replace(lobbyUrl);
-    }, 500);
-    return;
+  function setProgress(pct){ elProgress.style.width = pct+'%'; }
+
+  function doRedirect(){
+    if(redirected) return;
+    redirected = true;
+    setProgress(100);
+    elStatus.textContent = 'Membuka game...';
+    setTimeout(function(){ window.location.replace(targetUrl); }, 300);
   }
 
-  // ── Mode PROXY: coba redirect langsung, fallback ke 2-step ──
-  elProgress.style.width = '30%';
-  elStatus.textContent = 'Mencoba membuka game...';
+  // Cek apakah cookies sudah ada (pernah buka lobby sebelumnya)
+  var cookieKey = 'idn_auth_ok';
+  var hasAuth = false;
+  try { hasAuth = localStorage.getItem(cookieKey) === '1'; } catch(e){}
 
-  // Coba redirect langsung ke game URL (yang sudah di-inject auth params oleh bot)
-  // Jika game URL sudah mengandung token auth, ini bisa langsung jalan
-  var hasAuthInUrl = (gameUrl.indexOf('token=') !== -1 ||
-                      gameUrl.indexOf('loginid=') !== -1 ||
-                      gameUrl.indexOf('operator=') !== -1);
-
-  if (hasAuthInUrl) {
-    // Game URL punya auth params → coba langsung
-    elProgress.style.width = '70%';
+  if(hasAuth){
+    // SUDAH pernah auth → langsung redirect ke game
+    setProgress(50);
     elStatus.textContent = 'Memuat game...';
-    setTimeout(function() {
-      elProgress.style.width = '100%';
-      elStatus.textContent = 'Membuka game...';
-      setTimeout(function() {
-        window.location.replace(gameUrl);
-      }, 300);
-    }, 800);
-    return;
+    doRedirect();
+  } else {
+    // BELUM pernah auth → buka lobby dulu untuk set cookies
+    // Simpan flag bahwa sudah auth
+    try { localStorage.setItem(cookieKey, '1'); } catch(e){}
+
+    setProgress(10);
+    elStatus.textContent = 'Menyiapkan sesi pertama kali...';
+
+    // Redirect ke lobby (top-level, bukan iframe) → set first-party cookies
+    setTimeout(function(){
+      setProgress(50);
+      elStatus.textContent = 'Menghubungkan ke server...';
+      setTimeout(function(){
+        window.location.replace(lobbyUrl);
+      }, 800);
+    }, 500);
   }
-
-  // Game URL TIDAK punya auth → tampilkan 2-step manual
-  setTimeout(function() {
-    elLoading.classList.add('hidden');
-    elSteps.classList.remove('hidden');
-    document.getElementById('lobbyBtn').href = lobbyUrl;
-    document.getElementById('gameBtn').href = gameUrl;
-
-    // Track: jika user sudah klik lobby, tandai step 1 done
-    document.getElementById('lobbyBtn').addEventListener('click', function() {
-      setTimeout(function() {
-        document.getElementById('stepNum1').textContent = '✓';
-        document.getElementById('stepNum1').classList.add('done');
-      }, 1000);
-    });
-  }, 1000);
-
 })();
 </script>
 </body>
