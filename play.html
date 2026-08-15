@@ -1,11 +1,17 @@
 <!DOCTYPE html>
 <!--
-  play.html — Game Proxy (patched)
-  Perubahan dari versi lama:
-    • Error validasi kini MENAMPILKAN domain yang ditolak (self-diagnosing)
-    • https-only (http: tidak lagi diizinkan)
-    • Membaca parameter `mode` secara eksplisit (sinkron dg proxy_server.py)
-    • Menghapus authFrame.onerror (iframe tidak memicu error andal → timeout yg jadi fallback)
+  ════════════════════════════════════════════════════════════════
+  play.html — Game Proxy  ★ VERSI 3 (FIX MOBILE) ★
+  Penanda: cari kata "lobbyHasToken" & "JALUR A" untuk memastikan
+           file INI yang ter-deploy, bukan versi lama.
+  ════════════════════════════════════════════════════════════════
+  Riwayat:
+    v1 — proxy iframe-cookie dasar
+    v2 — diagnostik: menampilkan domain yang ditolak + https-only
+    v3 — FIX MOBILE: bila lobby membawa token (data=), redirect
+         LANGSUNG ke URL token (top-level, first-party) tanpa iframe.
+         Ini yang membuat sesi berpotensi terbawa di WebView HP.
+  ════════════════════════════════════════════════════════════════
 -->
 <html lang="id">
 <head>
@@ -81,7 +87,7 @@
     font-size: 15px;
     color: rgba(255,255,255,0.7);
     line-height: 1.5;
-    white-space: pre-line;      /* agar \n pada pesan diagnostik tampil sebagai baris baru */
+    white-space: pre-line;
     word-break: break-word;
   }
   .btn-retry {
@@ -137,7 +143,7 @@
 (function() {
   'use strict';
 
-  // ── Whitelisted domains untuk validasi URL ──
+  // Whitelisted domains untuk validasi URL.
   // Tambahkan domain baru di sini bila error menampilkan domain yang belum terdaftar.
   var ALLOWED_DOMAINS = [
     'lobbybalancing.mngtto.com',
@@ -150,7 +156,6 @@
     'loobygamesonline.com'
   ];
 
-  // ── DOM Elements ──
   var elName = document.getElementById('gameName');
   var elStatus = document.getElementById('status');
   var elProgress = document.getElementById('progressBar');
@@ -159,7 +164,6 @@
   var elErrMsg = document.getElementById('errorMsg');
   var authFrame = document.getElementById('authFrame');
 
-  // ── Helpers ──
   function setProgress(pct) {
     elProgress.style.width = Math.min(pct, 100) + '%';
   }
@@ -172,7 +176,6 @@
 
   function sanitizeText(str, maxLen) {
     if (!str) return '';
-    // Hapus HTML tags dan batasi panjang
     var clean = str.replace(/<[^>]*>/g, '').replace(/[<>"'&]/g, '');
     return clean.substring(0, maxLen || 50);
   }
@@ -194,7 +197,6 @@
       if (parsed.protocol !== 'https:') {
         return false;
       }
-      // Cek apakah domain ada di whitelist
       var hostname = parsed.hostname.toLowerCase();
       for (var i = 0; i < ALLOWED_DOMAINS.length; i++) {
         if (hostname === ALLOWED_DOMAINS[i] ||
@@ -211,14 +213,11 @@
   function decodeParam(val) {
     if (!val) return null;
     try {
-      // Base64url → standard base64
       var b64 = val.replace(/-/g, '+').replace(/_/g, '/');
-      // Tambah padding jika perlu
       while (b64.length % 4 !== 0) b64 += '=';
       var decoded = atob(b64);
       return decodeURIComponent(decoded);
     } catch (e) {
-      // Fallback: mungkin plain URL-encoded
       try {
         return decodeURIComponent(val);
       } catch (e2) {
@@ -227,31 +226,38 @@
     }
   }
 
-  // ── Parse Parameters ──
+  // Parse Parameters
   var params = new URLSearchParams(window.location.search);
   var lobbyUrl = decodeParam(params.get('lobby'));
   var gameUrl = decodeParam(params.get('game'));
   var gameName = decodeParam(params.get('name')) || 'Game';
-  var mode = (params.get('mode') || '').toLowerCase();   // 'proxy' | 'lobby' | ''
+  var mode = (params.get('mode') || '').toLowerCase();
 
-  // ── Validasi lobby ──
+  // Validasi lobby
   if (!lobbyUrl) {
     showError('Link tidak valid. Silakan kembali ke bot dan pilih game lagi.');
     return;
   }
 
   if (!isValidUrl(lobbyUrl)) {
-    // DIAGNOSTIK: tampilkan domain yang ditolak agar mudah di-whitelist.
     showError('Domain lobby belum di-whitelist:\n' + safeHost(lobbyUrl));
     return;
   }
 
-  // ── Tentukan target redirect berdasarkan mode (sinkron dg proxy_server.py) ──
-  //   mode=proxy → redirect ke URL game spesifik
-  //   mode=lobby → redirect ke lobby (game dipilih di dalam lobby)
-  //   (kosong)   → fallback: pakai game bila ada, jika tidak pakai lobby
+  // ════════════════════════════════════════════════════════════
+  // INTI FIX MOBILE v3
+  // Deteksi apakah lobby SUDAH membawa token sesi di dalam URL.
+  //   Contoh: https://wl2.loobygamesonline.com/api/idnlive/launch/newlobby/?data=<token>
+  // URL ber-token seperti ini tidak butuh cookie — sesi ada di URL itu sendiri.
+  // ════════════════════════════════════════════════════════════
+  var lobbyHasToken = /[?&]data=/.test(lobbyUrl) ||
+                      lobbyUrl.indexOf('loobygamesonline.com') !== -1;
+
+  // Tentukan target redirect.
   var targetUrl;
-  if (mode === 'proxy') {
+  if (lobbyHasToken) {
+    targetUrl = lobbyUrl;
+  } else if (mode === 'proxy') {
     targetUrl = gameUrl || lobbyUrl;
   } else if (mode === 'lobby') {
     targetUrl = lobbyUrl;
@@ -264,11 +270,9 @@
     return;
   }
 
-  // ── Set game name (sanitized) ──
   elName.textContent = sanitizeText(gameName, 50);
   document.title = sanitizeText(gameName, 30) + ' — Loading...';
 
-  // ── Loading flow ──
   var redirected = false;
   var authLoaded = false;
 
@@ -282,33 +286,41 @@
     }, 300);
   }
 
-  // Phase 1: Mulai koneksi
   setProgress(10);
   elStatus.textContent = 'Menghubungkan ke server...';
 
-  // Phase 2: Load auth iframe.
-  // Catatan: <iframe> tidak memicu event 'error' secara andal untuk kegagalan
-  // load/cross-origin, jadi TIMEOUT 8 detik di bawah yang menjadi fallback utama.
+  // ════════════════════════════════════════════════════════════
+  // JALUR A — URL ber-token: redirect LANGSUNG (tanpa iframe cookie).
+  // Berpotensi bekerja di HP karena token ada di dalam URL (first-party).
+  // ════════════════════════════════════════════════════════════
+  if (lobbyHasToken) {
+    setProgress(60);
+    elStatus.textContent = 'Sesi siap, membuka game...';
+    setTimeout(doRedirect, 500);
+    return;
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // JALUR B — provider lama tanpa token: iframe set cookie → redirect.
+  // Catatan: jalur ini hanya andal di PC; di HP cookie pihak ketiga diblokir.
+  // ════════════════════════════════════════════════════════════
   authFrame.onload = function() {
-    if (authLoaded) return; // Cegah double-fire
+    if (authLoaded) return;
     authLoaded = true;
     setProgress(70);
     elStatus.textContent = 'Sesi siap, memuat game...';
     setTimeout(doRedirect, 1200);
   };
 
-  // Start loading
   setTimeout(function() {
     setProgress(25);
     elStatus.textContent = 'Menyiapkan sesi...';
     authFrame.src = lobbyUrl;
   }, 200);
 
-  // Progress updates
   setTimeout(function() { if (!redirected) setProgress(40); }, 1500);
   setTimeout(function() { if (!redirected) setProgress(55); }, 3000);
 
-  // Timeout: redirect pasti dalam 8 detik (fallback utama)
   setTimeout(function() {
     if (!redirected) {
       elStatus.textContent = 'Sesi timeout, redirect langsung...';
@@ -320,7 +332,6 @@
 
 function tryClose() {
   try { window.close(); } catch(e) {}
-  // Jika window.close gagal (biasanya di mobile), redirect ke about:blank
   setTimeout(function() {
     try { window.location.href = 'about:blank'; } catch(e) {}
   }, 300);
