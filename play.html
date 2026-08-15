@@ -1,4 +1,12 @@
 <!DOCTYPE html>
+<!--
+  play.html — Game Proxy (patched)
+  Perubahan dari versi lama:
+    • Error validasi kini MENAMPILKAN domain yang ditolak (self-diagnosing)
+    • https-only (http: tidak lagi diizinkan)
+    • Membaca parameter `mode` secara eksplisit (sinkron dg proxy_server.py)
+    • Menghapus authFrame.onerror (iframe tidak memicu error andal → timeout yg jadi fallback)
+-->
 <html lang="id">
 <head>
 <meta charset="utf-8">
@@ -73,6 +81,8 @@
     font-size: 15px;
     color: rgba(255,255,255,0.7);
     line-height: 1.5;
+    white-space: pre-line;      /* agar \n pada pesan diagnostik tampil sebagai baris baru */
+    word-break: break-word;
   }
   .btn-retry {
     padding: 12px 32px;
@@ -128,6 +138,7 @@
   'use strict';
 
   // ── Whitelisted domains untuk validasi URL ──
+  // Tambahkan domain baru di sini bila error menampilkan domain yang belum terdaftar.
   var ALLOWED_DOMAINS = [
     'lobbybalancing.mngtto.com',
     'mngtto.com',
@@ -165,11 +176,21 @@
     return clean.substring(0, maxLen || 50);
   }
 
+  // Ambil hostname dari URL untuk pesan diagnostik (aman jika URL rusak).
+  function safeHost(url) {
+    try {
+      return new URL(url).hostname;
+    } catch (e) {
+      return '(gagal parse) ' + String(url || '').slice(0, 90);
+    }
+  }
+
   function isValidUrl(url) {
     if (!url) return false;
     try {
       var parsed = new URL(url);
-      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      // https-only: cegah downgrade ke http
+      if (parsed.protocol !== 'https:') {
         return false;
       }
       // Cek apakah domain ada di whitelist
@@ -210,21 +231,35 @@
   var lobbyUrl = decodeParam(params.get('lobby'));
   var gameUrl = decodeParam(params.get('game'));
   var gameName = decodeParam(params.get('name')) || 'Game';
+  var mode = (params.get('mode') || '').toLowerCase();   // 'proxy' | 'lobby' | ''
 
-  // ── Validasi ──
+  // ── Validasi lobby ──
   if (!lobbyUrl) {
     showError('Link tidak valid. Silakan kembali ke bot dan pilih game lagi.');
     return;
   }
 
   if (!isValidUrl(lobbyUrl)) {
-    showError('URL lobby tidak dikenali. Silakan pilih game dari bot.');
+    // DIAGNOSTIK: tampilkan domain yang ditolak agar mudah di-whitelist.
+    showError('Domain lobby belum di-whitelist:\n' + safeHost(lobbyUrl));
     return;
   }
 
-  var targetUrl = gameUrl || lobbyUrl;
+  // ── Tentukan target redirect berdasarkan mode (sinkron dg proxy_server.py) ──
+  //   mode=proxy → redirect ke URL game spesifik
+  //   mode=lobby → redirect ke lobby (game dipilih di dalam lobby)
+  //   (kosong)   → fallback: pakai game bila ada, jika tidak pakai lobby
+  var targetUrl;
+  if (mode === 'proxy') {
+    targetUrl = gameUrl || lobbyUrl;
+  } else if (mode === 'lobby') {
+    targetUrl = lobbyUrl;
+  } else {
+    targetUrl = gameUrl || lobbyUrl;
+  }
+
   if (!isValidUrl(targetUrl)) {
-    showError('URL game tidak dikenali. Silakan pilih game dari bot.');
+    showError('Domain game belum di-whitelist:\n' + safeHost(targetUrl));
     return;
   }
 
@@ -250,19 +285,15 @@
   setProgress(10);
   elStatus.textContent = 'Menghubungkan ke server...';
 
-  // Phase 2: Load auth iframe
+  // Phase 2: Load auth iframe.
+  // Catatan: <iframe> tidak memicu event 'error' secara andal untuk kegagalan
+  // load/cross-origin, jadi TIMEOUT 8 detik di bawah yang menjadi fallback utama.
   authFrame.onload = function() {
     if (authLoaded) return; // Cegah double-fire
     authLoaded = true;
     setProgress(70);
     elStatus.textContent = 'Sesi siap, memuat game...';
     setTimeout(doRedirect, 1200);
-  };
-
-  authFrame.onerror = function() {
-    setProgress(50);
-    elStatus.textContent = 'Memuat game...';
-    setTimeout(doRedirect, 800);
   };
 
   // Start loading
@@ -276,7 +307,7 @@
   setTimeout(function() { if (!redirected) setProgress(40); }, 1500);
   setTimeout(function() { if (!redirected) setProgress(55); }, 3000);
 
-  // Timeout: redirect pasti dalam 8 detik
+  // Timeout: redirect pasti dalam 8 detik (fallback utama)
   setTimeout(function() {
     if (!redirected) {
       elStatus.textContent = 'Sesi timeout, redirect langsung...';
