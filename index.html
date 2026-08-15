@@ -1,13 +1,22 @@
 <!DOCTYPE html>
+<!--
+  play.html — Game Proxy (patched)
+  Perubahan dari versi lama:
+    • Error validasi kini MENAMPILKAN domain yang ditolak (self-diagnosing)
+    • https-only (http: tidak lagi diizinkan)
+    • Membaca parameter `mode` secara eksplisit (sinkron dg proxy_server.py)
+    • Menghapus authFrame.onerror (iframe tidak memicu error andal → timeout yg jadi fallback)
+-->
 <html lang="id">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="robots" content="noindex, nofollow">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Game Proxy</title>
+<title>Loading Game...</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background: #0a0a0a;
     color: #fff;
     display: flex;
@@ -15,28 +24,306 @@
     justify-content: center;
     height: 100vh;
     height: 100dvh;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     text-align: center;
-    padding: 20px;
+    overflow: hidden;
   }
   .container {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 16px;
+    gap: 24px;
+    padding: 20px;
+    max-width: 340px;
   }
-  .icon { font-size: 48px; }
-  p {
-    font-size: 15px;
-    color: rgba(255,255,255,0.6);
+  .spinner {
+    width: 52px;
+    height: 52px;
+    border: 4px solid rgba(255,255,255,0.1);
+    border-top-color: #f59e0b;
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .game-name {
+    font-size: 20px;
+    font-weight: 700;
+    color: #f59e0b;
+    line-height: 1.3;
+    word-break: break-word;
+  }
+  .progress-wrap {
+    width: 100%;
+    height: 6px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .progress-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #f59e0b, #ef4444);
+    border-radius: 3px;
+    transition: width .3s ease;
+  }
+  .status {
+    font-size: 14px;
+    color: rgba(255,255,255,0.5);
     line-height: 1.5;
   }
+  .error-box {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+  .error-box.show { display: flex; }
+  .error-msg {
+    font-size: 15px;
+    color: rgba(255,255,255,0.7);
+    line-height: 1.5;
+    white-space: pre-line;      /* agar \n pada pesan diagnostik tampil sebagai baris baru */
+    word-break: break-word;
+  }
+  .btn-retry {
+    padding: 12px 32px;
+    background: #f59e0b;
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .btn-retry:active { opacity: 0.8; }
+  .btn-close {
+    padding: 10px 24px;
+    background: transparent;
+    color: rgba(255,255,255,0.5);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .btn-row { display: flex; gap: 12px; }
+  .hidden { display: none !important; }
 </style>
 </head>
 <body>
-<div class="container">
-  <div class="icon">🎮</div>
-  <p>Game proxy service.<br>Diakses melalui bot Telegram.</p>
+
+<div class="container" id="loading">
+  <div class="spinner"></div>
+  <div class="game-name" id="gameName">Loading...</div>
+  <div class="progress-wrap">
+    <div class="progress-bar" id="progressBar"></div>
+  </div>
+  <div class="status" id="status">Menyiapkan sesi game...</div>
 </div>
+
+<div class="container error-box" id="errorBox">
+  <div style="font-size:48px">⚠️</div>
+  <div class="error-msg" id="errorMsg">Link tidak valid.</div>
+  <div class="btn-row">
+    <button class="btn-retry" id="btnRetry" onclick="location.reload()">Coba Lagi</button>
+    <button class="btn-close" onclick="tryClose()">Tutup</button>
+  </div>
+</div>
+
+<iframe id="authFrame" class="hidden"
+  sandbox="allow-scripts allow-same-origin allow-forms allow-popups">
+</iframe>
+
+<script>
+(function() {
+  'use strict';
+
+  // ── Whitelisted domains untuk validasi URL ──
+  // Tambahkan domain baru di sini bila error menampilkan domain yang belum terdaftar.
+  var ALLOWED_DOMAINS = [
+    'lobbybalancing.mngtto.com',
+    'mngtto.com',
+    'olxtoto.com',
+    'olxsumo.com',
+    'aksesyok.com',
+    'alternatifkoi.info',
+    'trikcuan.info'
+  ];
+
+  // ── DOM Elements ──
+  var elName = document.getElementById('gameName');
+  var elStatus = document.getElementById('status');
+  var elProgress = document.getElementById('progressBar');
+  var elLoading = document.getElementById('loading');
+  var errorBox = document.getElementById('errorBox');
+  var elErrMsg = document.getElementById('errorMsg');
+  var authFrame = document.getElementById('authFrame');
+
+  // ── Helpers ──
+  function setProgress(pct) {
+    elProgress.style.width = Math.min(pct, 100) + '%';
+  }
+
+  function showError(msg) {
+    elLoading.classList.add('hidden');
+    elErrMsg.textContent = msg;
+    errorBox.classList.add('show');
+  }
+
+  function sanitizeText(str, maxLen) {
+    if (!str) return '';
+    // Hapus HTML tags dan batasi panjang
+    var clean = str.replace(/<[^>]*>/g, '').replace(/[<>"'&]/g, '');
+    return clean.substring(0, maxLen || 50);
+  }
+
+  // Ambil hostname dari URL untuk pesan diagnostik (aman jika URL rusak).
+  function safeHost(url) {
+    try {
+      return new URL(url).hostname;
+    } catch (e) {
+      return '(gagal parse) ' + String(url || '').slice(0, 90);
+    }
+  }
+
+  function isValidUrl(url) {
+    if (!url) return false;
+    try {
+      var parsed = new URL(url);
+      // https-only: cegah downgrade ke http
+      if (parsed.protocol !== 'https:') {
+        return false;
+      }
+      // Cek apakah domain ada di whitelist
+      var hostname = parsed.hostname.toLowerCase();
+      for (var i = 0; i < ALLOWED_DOMAINS.length; i++) {
+        if (hostname === ALLOWED_DOMAINS[i] ||
+            hostname.endsWith('.' + ALLOWED_DOMAINS[i])) {
+          return true;
+        }
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function decodeParam(val) {
+    if (!val) return null;
+    try {
+      // Base64url → standard base64
+      var b64 = val.replace(/-/g, '+').replace(/_/g, '/');
+      // Tambah padding jika perlu
+      while (b64.length % 4 !== 0) b64 += '=';
+      var decoded = atob(b64);
+      return decodeURIComponent(decoded);
+    } catch (e) {
+      // Fallback: mungkin plain URL-encoded
+      try {
+        return decodeURIComponent(val);
+      } catch (e2) {
+        return null;
+      }
+    }
+  }
+
+  // ── Parse Parameters ──
+  var params = new URLSearchParams(window.location.search);
+  var lobbyUrl = decodeParam(params.get('lobby'));
+  var gameUrl = decodeParam(params.get('game'));
+  var gameName = decodeParam(params.get('name')) || 'Game';
+  var mode = (params.get('mode') || '').toLowerCase();   // 'proxy' | 'lobby' | ''
+
+  // ── Validasi lobby ──
+  if (!lobbyUrl) {
+    showError('Link tidak valid. Silakan kembali ke bot dan pilih game lagi.');
+    return;
+  }
+
+  if (!isValidUrl(lobbyUrl)) {
+    // DIAGNOSTIK: tampilkan domain yang ditolak agar mudah di-whitelist.
+    showError('Domain lobby belum di-whitelist:\n' + safeHost(lobbyUrl));
+    return;
+  }
+
+  // ── Tentukan target redirect berdasarkan mode (sinkron dg proxy_server.py) ──
+  //   mode=proxy → redirect ke URL game spesifik
+  //   mode=lobby → redirect ke lobby (game dipilih di dalam lobby)
+  //   (kosong)   → fallback: pakai game bila ada, jika tidak pakai lobby
+  var targetUrl;
+  if (mode === 'proxy') {
+    targetUrl = gameUrl || lobbyUrl;
+  } else if (mode === 'lobby') {
+    targetUrl = lobbyUrl;
+  } else {
+    targetUrl = gameUrl || lobbyUrl;
+  }
+
+  if (!isValidUrl(targetUrl)) {
+    showError('Domain game belum di-whitelist:\n' + safeHost(targetUrl));
+    return;
+  }
+
+  // ── Set game name (sanitized) ──
+  elName.textContent = sanitizeText(gameName, 50);
+  document.title = sanitizeText(gameName, 30) + ' — Loading...';
+
+  // ── Loading flow ──
+  var redirected = false;
+  var authLoaded = false;
+
+  function doRedirect() {
+    if (redirected) return;
+    redirected = true;
+    setProgress(100);
+    elStatus.textContent = 'Membuka game...';
+    setTimeout(function() {
+      window.location.replace(targetUrl);
+    }, 300);
+  }
+
+  // Phase 1: Mulai koneksi
+  setProgress(10);
+  elStatus.textContent = 'Menghubungkan ke server...';
+
+  // Phase 2: Load auth iframe.
+  // Catatan: <iframe> tidak memicu event 'error' secara andal untuk kegagalan
+  // load/cross-origin, jadi TIMEOUT 8 detik di bawah yang menjadi fallback utama.
+  authFrame.onload = function() {
+    if (authLoaded) return; // Cegah double-fire
+    authLoaded = true;
+    setProgress(70);
+    elStatus.textContent = 'Sesi siap, memuat game...';
+    setTimeout(doRedirect, 1200);
+  };
+
+  // Start loading
+  setTimeout(function() {
+    setProgress(25);
+    elStatus.textContent = 'Menyiapkan sesi...';
+    authFrame.src = lobbyUrl;
+  }, 200);
+
+  // Progress updates
+  setTimeout(function() { if (!redirected) setProgress(40); }, 1500);
+  setTimeout(function() { if (!redirected) setProgress(55); }, 3000);
+
+  // Timeout: redirect pasti dalam 8 detik (fallback utama)
+  setTimeout(function() {
+    if (!redirected) {
+      elStatus.textContent = 'Sesi timeout, redirect langsung...';
+      doRedirect();
+    }
+  }, 8000);
+
+})();
+
+function tryClose() {
+  try { window.close(); } catch(e) {}
+  // Jika window.close gagal (biasanya di mobile), redirect ke about:blank
+  setTimeout(function() {
+    try { window.location.href = 'about:blank'; } catch(e) {}
+  }, 300);
+}
+</script>
 </body>
 </html>
