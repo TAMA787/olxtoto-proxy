@@ -226,12 +226,44 @@
     }
   }
 
-  // Parse Parameters
+  // XOR decode (match Python _xor_encode)
+  var XOR_KEY = 'olxtoto2026';
+  function xorDecode(encoded) {
+    try {
+      var b64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4 !== 0) b64 += '=';
+      var raw = atob(b64);
+      var result = '';
+      for (var i = 0; i < raw.length; i++) {
+        result += String.fromCharCode(raw.charCodeAt(i) ^ XOR_KEY.charCodeAt(i % XOR_KEY.length));
+      }
+      return JSON.parse(result);
+    } catch(e) { return null; }
+  }
+
+  // Parse Parameters — support encrypted 'd=' dan legacy params
   var params = new URLSearchParams(window.location.search);
-  var lobbyUrl = decodeParam(params.get('lobby'));
-  var gameUrl = decodeParam(params.get('game'));
-  var gameName = decodeParam(params.get('name')) || 'Game';
-  var mode = (params.get('mode') || '').toLowerCase();
+  var lobbyUrl, gameUrl, gameName, mode;
+
+  var packed = params.get('d');
+  if (packed) {
+    // Format baru: semua dalam 1 encrypted param
+    var p = xorDecode(packed);
+    if (p) {
+      lobbyUrl = p.l || null;
+      gameUrl = p.g || null;
+      gameName = p.n || 'Game';
+      mode = (p.m || 'lobby').toLowerCase();
+    }
+  }
+
+  // Fallback: legacy params (backward compatible)
+  if (!lobbyUrl) {
+    lobbyUrl = decodeParam(params.get('lobby'));
+    gameUrl = decodeParam(params.get('game'));
+    gameName = decodeParam(params.get('name')) || 'Game';
+    mode = (params.get('mode') || '').toLowerCase();
+  }
 
   // Validasi lobby
   if (!lobbyUrl) {
