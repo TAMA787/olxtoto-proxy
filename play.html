@@ -1,16 +1,16 @@
 <!DOCTYPE html>
 <!--
   ════════════════════════════════════════════════════════════════
-  play.html — Game Proxy  ★ VERSI 3 (FIX MOBILE) ★
-  Penanda: cari kata "lobbyHasToken" & "JALUR A" untuk memastikan
+  play.html — Game Proxy  ★ VERSI 4 (DIRECT ROOM) ★
+  Penanda: cari kata "MODE PROXY" & "JALUR A2" untuk memastikan
            file INI yang ter-deploy, bukan versi lama.
   ════════════════════════════════════════════════════════════════
   Riwayat:
     v1 — proxy iframe-cookie dasar
     v2 — diagnostik: menampilkan domain yang ditolak + https-only
-    v3 — FIX MOBILE: bila lobby membawa token (data=), redirect
-         LANGSUNG ke URL token (top-level, first-party) tanpa iframe.
-         Ini yang membuat sesi berpotensi terbawa di WebView HP.
+    v3 — FIX MOBILE: redirect langsung ke URL ber-token
+    v4 — DIRECT ROOM: mode=proxy → iframe auth lobby, redirect ke
+         GAME URL spesifik. User langsung masuk room, bukan lobby.
   ════════════════════════════════════════════════════════════════
 -->
 <html lang="id">
@@ -245,21 +245,25 @@
   }
 
   // ════════════════════════════════════════════════════════════
-  // INTI FIX MOBILE v3
-  // Deteksi apakah lobby SUDAH membawa token sesi di dalam URL.
-  //   Contoh: https://wl2.loobygamesonline.com/api/idnlive/launch/newlobby/?data=<token>
-  // URL ber-token seperti ini tidak butuh cookie — sesi ada di URL itu sendiri.
+  // INTI FIX v4 — MODE PROXY vs LOBBY
+  //
+  // mode=proxy: lobby di iframe (untuk auth), redirect ke GAME URL
+  //   → user langsung masuk ke room game spesifik
+  // mode=lobby: redirect ke LOBBY URL (user pilih game sendiri)
+  //
+  // Kalau lobby punya token (data=), sesi ada di URL — tidak butuh
+  // cookie dari iframe. Tapi target tetap tergantung MODE.
   // ════════════════════════════════════════════════════════════
   var lobbyHasToken = /[?&]data=/.test(lobbyUrl) ||
                       lobbyUrl.indexOf('loobygamesonline.com') !== -1;
 
-  // Tentukan target redirect.
+  // Tentukan target redirect berdasarkan MODE.
   var targetUrl;
-  if (lobbyHasToken) {
-    targetUrl = lobbyUrl;
-  } else if (mode === 'proxy') {
-    targetUrl = gameUrl || lobbyUrl;
-  } else if (mode === 'lobby') {
+  if (mode === 'proxy' && gameUrl) {
+    // MODE PROXY: tujuan = game URL (room spesifik)
+    targetUrl = gameUrl;
+  } else if (lobbyHasToken || mode === 'lobby') {
+    // LOBBY: tujuan = lobby URL
     targetUrl = lobbyUrl;
   } else {
     targetUrl = gameUrl || lobbyUrl;
@@ -290,13 +294,41 @@
   elStatus.textContent = 'Menghubungkan ke server...';
 
   // ════════════════════════════════════════════════════════════
-  // JALUR A — URL ber-token: redirect LANGSUNG (tanpa iframe cookie).
-  // Berpotensi bekerja di HP karena token ada di dalam URL (first-party).
+  // JALUR A — Lobby ber-token + MODE LOBBY: redirect LANGSUNG.
   // ════════════════════════════════════════════════════════════
-  if (lobbyHasToken) {
+  if (lobbyHasToken && mode !== 'proxy') {
     setProgress(60);
     elStatus.textContent = 'Sesi siap, membuka game...';
     setTimeout(doRedirect, 500);
+    return;
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // JALUR A2 — MODE PROXY + lobby ber-token:
+  //   Lobby di iframe (untuk set auth), lalu redirect ke GAME URL.
+  //   Token ada di lobby URL, jadi iframe cukup untuk auth.
+  // ════════════════════════════════════════════════════════════
+  if (lobbyHasToken && mode === 'proxy' && gameUrl) {
+    setProgress(20);
+    elStatus.textContent = 'Menyiapkan sesi...';
+
+    authFrame.onload = function() {
+      if (authLoaded) return;
+      authLoaded = true;
+      setProgress(80);
+      elStatus.textContent = 'Sesi siap, membuka game...';
+      setTimeout(doRedirect, 800);
+    };
+
+    authFrame.src = lobbyUrl;
+
+    // Timeout: kalau iframe lambat, redirect langsung ke game
+    setTimeout(function() {
+      if (!redirected) {
+        elStatus.textContent = 'Membuka game langsung...';
+        doRedirect();
+      }
+    }, 6000);
     return;
   }
 
